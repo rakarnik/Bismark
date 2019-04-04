@@ -1,12 +1,164 @@
 # Bismark Changelog
 
-## Changelog for Bismark v0.19.1_dev
+## Changelog for Bismark v0.21.0_dev (last update 01 04 2019)
+
+Expanding on our observation that single-cell BS-seq, or PBAT libraries in general, can [generate chimeric read pairs](
+https://sequencing.qcfail.com/articles/pbat-libraries-may-generate-chimaeric-read-pairs/), a recent publication by [Wu et al.](https://www.ncbi.nlm.nih.gov/pubmed/30859188) described in further detail that intra-fragment chimeras can hinder the efficient alignment of single-cell BS-seq libraries. In there, the authors described a pipeline that uses paired-end alignments first, followed by a second, single-end alignment step that uses local alignments in a bid to improve the mapping of intra-molecular chimeras. To allow this type of improvement for single-cell or PBAT libraries, we have been experimenting with allowing local alignments.
+
+### Bismark
+
+- Added support for local alignments by introducing the new option `--local`. This means that the CIGAR operation `S` (soft-clipping) is now supported (at the time of writing only working for Bowtie 2 mode)
+
+- fixed typo in option `--path_to_bowtie2` (a single missing `2` was preventing the specified path to be accepted)
+
+- fixed type in option `--no-spliced-alignment` in HISAT2 mode
+
+### bismark_methylation_extractor
+
+- Now supporting reads containing soft-clipped bases (CIGAR operation S) 
+
+### bam2nuc
+
+- Now supporting reads containing soft-clipped bases (CIGAR operation S)
+
+### deduplicate_bismark
+
+- Now supporting reads containing soft-clipped bases (CIGAR operation S)
+
+
+## Changelog for Bismark v0.21.0
+
+For the upcoming version Bismark has undergone some substantial changes, which sometimes affect more than one module within the Bismark suite. Here is a short description of the major changes: 
+
+#### Bowtie 1 support
+- `Bowtie (1)` support, and all of its options, has been completely dropped from `bismark_genome_preparation` and `bismark`. This decision was not made lightly, but it seems no one is using the original Bowtie short read aligner anymore, even short reads have moved on...
+- Consequently, the option `--vanilla` and its handling has been removed from a number of modules (`bismark_genome_preparation`, `bismark`, `bismark_methylation_extractor` and `deduplicate_bismark`). Too bad, I liked that name...
+
+#### HISAT2 support
+- Instead, the DNA and RNA aligner [HISAT2](https://ccb.jhu.edu/software/hisat2/index.shtml) has been added as a new choice of aligner. The reason for this is not necessarily that RNA methylation is now a thing, but certain alignment modes (see below) do require splice-aware mapping if we don't want to miss out on a whole class of (spliced) alignments. Bowtie 2 is the default mode, HISAT2 alignments can be enabled with the option `--hisat2`
+
+- Similar to the Bowtie2 mode, alignments with HISAT2 are restricted to global (end-to-end) alignments, i.e. soft-clipping is disabled. Furthermore, in paired-end mode, the options `--no-mixed` and `--no-discordant` are permanently enabled, meaning that only properly aligned read pairs are put out. 
+
+- As the `--hisat2` mode supports spliced alignments, the new `CIGAR` operation `N` is now supported in all Bismark modules (this includes `bismark_genome_preparation`, `bismark`, `bismark_methylation_extractor`, `deduplicate_bismark` and some others).
+
+At the time of writing this, the `--hisat2` mode appears to be working as expected. It should be mentioned however that we have not done a lot of testing of these new files, so comments and feedback are welcome.
+
+
+#### SLAM-seq mode
+
+We also added a new, experimental and completely different type of alignment for SLAM-seq type data (option `--slam`). This fairly recent method to interrogate newly synthesized messenger RNA is akin to bisulfite conversion, in that newly synthesized RNA may contain T to C conversions following an alkylation reaction ([original publication](http://science.sciencemag.org/content/360/6390/800) and https://www.nature.com/articles/nmeth.4435). The new Bismark alignment mode `--slam` performs T>C conversions of both the genome (in the genome preparation step) and the subsequent alignment steps (Bismark alignment step). Currently, the rest of the processing of SLAM-seq data hijacks the standard methylation pipeline:
+    
+- T>C conversions are written out as `methylation events` in CpG context, while T-T matches are scored as `unmethylated events` in CpG context. Other cytosine contexts are not being used. 
+
+So in a nut-shell: methylation calls in `--slam` mode are either Ts (unmethylated calls = matches at T positions), or T to C mismatches (methylated calls = C mismatches at T positions). 
+
+It should be noted that this is currently an **experimental workflow**. One might argue that T/C conversion aware (or T/C mis-mapping agnostic) mapping is currently not necessary for [SLAM-seq](https://www.nature.com/articles/nmeth.4435), [NASC-Seq](https://www.biorxiv.org/content/10.1101/498667v1.article-info), or [scSLAM-seq](https://www.biorxiv.org/content/10.1101/486852v1) data as the labeling reaction is very inefficient (1 in only 50 to 200 newly incorporated Ts is a 4sU, which may get alkylated). This might be true - for now. If and when the conversion reaction improves over time, C/T agnostic mapping, similar to bisulfite-Seq data, might very well become necessary.
+
+
+* Added documentation for NOMe-seq or scNMT-seq processing.
+
+### bismark
+
+- Dropped support for Bowtie
+
+- Removed all traces of `--vanilla`
+
+- Added support for HISAT2 with option `--hisat2`.
+
+- Added HISAT2 option `--no-spliced-aligments` to disable spliced alignments altogether
+
+- Added HISAT2 option `--known-splicesite-infile <path>` to provide a list of known splice sites.
+
+- Added option `--slam` to allow T/C mismatch agnostic mapping (3-letter alignment). More [here](https://github.com/FelixKrueger/Bismark/blob/master/CHANGELOG.md#slam-seq-mode).
+
+- Added a new option `--icpc` to truncate read IDs at the first space (or tab) it encounters in the (FastQ) read ID, which are sometimes used to add comments to a FastQ entry (instead of replacing them with underscores which is the default behaviour).
+
+### bismark_genome_preparation
+
+- Dropped support for Bowtie
+
+- Added support for HISAT2 with option `--hisat2`.
+
+- Added option `--slam`. Instead of performing an in-silico bisulfite conversion, this mode transforms T to C (forward strand), or A to G (reverse strand). The folder structure and rest of the indexing process is currently exactly the same as for bisulfite sequences, but this might change at some point. This means that a genome prepared in `--slam` mode is currently indistinguishable from a true Bisulfite Genome (until the alignments are in) so please make sure you name the genome folder appropriately to avoid confusion.
+
+
+### deduplicate_bismark
+
+* Removed all traces of `--vanilla`
+
+* `--bam` mode is now the default. Uncompressed SAM output may still be obtained using the new option `--sam`
+
+* Added new option `-o/--outfile <basename>`. This basename is then modified to remove file endings such as `.bam`, `.sam`, `.txt` or `.gz`, and `.deduplicated.bam`, or `.multiple.deduplicated.bam` in `--multiple` mode, is then appended for consistency reasons.
+
+- Added support for new CIGAR operation `N`
+
+### bismark_methylation_extractor
+
+- Added support for new CIGAR operation `N` for all extraction modes
+
+- Removed all traces of `--vanilla`
+
+### bismark2summary/bismark2report
+
+- Adapted to work with Bismark HISAT2 reports instead of Bowtie 1 reports.
+
+### bam2nuc
+
+- Reads containing spliced reads are now also skipped when determining the genomic base composition (as are reads with InDels).
+
+
+## Changelog for Bismark v0.20.1
+
+### bismark
+
+- Added check to prevent users from inadvertently specifying the very same file as both R1 and R2
+
+- Added a check for file truncation, or more generally the same number of reads between R1 and R2 for paired-end FastQ files (directional, non-directional and PBAT mode.
+
+- Added Travis CI testing for most Bismark modules and commands. This should help spotting problems a early, e.g. if I release a new version right before the Christmas holidays ...
+
+- Changed error message for failed `fork` command in `--parallel` mode to `[FATAL ERROR:] ...` to alert users that something isn't working as intended.
+ 
+### bismark_genome_preparation
+
+- Added multi-threading to the Bowtie2-based genome preparation (thanks to Rahul Karnik)
+
+- Added test to see whether specified files exist, or die otherwise
+
+
+### bismark2summary
+
+- Fixed division by zero errors when a C-context was not covered by *any* reads. This will now use values of `0/0` for the context plots, which looks a bit odd, but at least it still works.
+
+- Detects if (non-deduplicated) RRBS and WGBS samples are mixed together, and bails with a meaningful error message.
+
+### bam2nuc
+
+- Changed `samtools` to `$samtools_path` during single-end/paired-end file testing.
+
+### bismark_methylation_extractor
+
+- Changed the order in which `--ample_mem` and `--buffer_size` are checked.
+
+## Changelog for Bismark v0.20.0
 
 ### bismark_methylation_extractor
 
 - The methylation extractor now creates output directories if they don't exist already.
 
 - The options `--ample_mem` and `--buffer_size <string>` are now mutually exclusive.
+
+- Changed the directory being passed on when `--cytosine_report` is specified from parent directory' to 'output directory'.
+
+### bismark2report
+
+- Major rewrite of `bismark2report`: HTML file are now rendered using [Plotly.js](https://plot.ly/javascript/) which is completely open source and free to use. Highcharts and JQuery were dropped, as was raised here: https://github.com/FelixKrueger/Bismark/issues/177.
+The files `bioinfo.logo`, `bismark.logo`, `plot.ly` and `plotly_template.tpl` are read in dynamically from a new folder plotly. `bismark_sitrep` and all its contents no longer ship with Bismark. The Bismark HTML reports should be completely self-contained.
+
+### bismark2summary
+
+- Major rewrite of `bismark2summary`: HTML file are now rendered using [Plotly.js](https://plot.ly/javascript/) which is completely open source and free to use. Highcharts and JQuery were dropped, as was raised here: https://github.com/FelixKrueger/Bismark/issues/177. The files `bioinfo.logo`, `bismark.logo`, `plot.ly` and `plotly_template.tpl` are read in dynamically from a new folder plotly. `bismark_sitrep` and all its contents no longer ship with Bismark. The Bismark HTML Summary reports should be completely self-contained.
+
 
 ## Changelog for Bismark v0.19.1
 
